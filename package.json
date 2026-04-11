@@ -1,0 +1,25 @@
+{
+	"name": "mmm-goodwe-sems",
+	"version": "1.0.0",
+	"description": "MagicMirror² module: monitoraggio solare GoodWe via portale SEMS (solo lettura)",
+	"license": "MIT",
+	"type": "commonjs",
+	"keywords": [
+		"magicmirror",
+		"magicmirror2",
+		"goodwe",
+		"sems",
+		"photovoltaic",
+		"pv"
+	],
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/<username>/MMM-GoodWeSEMS.git"
+	},
+	"scripts": {
+		"test": "vitest run"
+	},
+	"devDependencies": {
+		"vitest": "^4.1.2"
+	}
+}
