@@ -25,13 +25,18 @@ Module.register("MMM-GoodWeSEMS", {
 		requestTimeout: 30 * 1000,
 		showFlow: true,
 		showKpi: true,
+		/** Se true, inverte import/export rete (impianti con segno SEMS opposto). */
+		invertGrid: false,
+		/** Se true, inverte carica/scarica batteria. */
+		invertBattery: false,
 		colors: {
-			pv: "#B4CD34",
+			pv: "#F5C518",
 			gridExport: "#38bdf8",
 			gridImport: "#f87171",
-			load: "#3b82f6",
-			batteryCharge: "#76DAFE",
-			batteryDischarge: "#1E7DB5"
+			load: "#7dd3fc",
+			batteryCharge: "#34d399",
+			batteryDischarge: "#a78bfa",
+			inverter: "#e2e8f0"
 		}
 	},
 
@@ -194,8 +199,8 @@ Module.register("MMM-GoodWeSEMS", {
 		if (w === null || w === undefined || Number.isNaN(Number(w))) {
 			return "—";
 		}
-		const n = Number(w);
-		if (Math.abs(n) >= 1000) {
+		const n = Math.abs(Number(w));
+		if (n >= 1000) {
 			return `${(n / 1000).toFixed(2)} kW`;
 		}
 		return `${Math.round(n)} W`;
@@ -210,120 +215,346 @@ Module.register("MMM-GoodWeSEMS", {
 	},
 
 	/**
+	 * SEMS: watt spesso sempre positivi; direzione in status (-1/0/1).
+	 * Se il watt è già negativo, il segno vince.
+	 * Rete: loadStatus 1 = import, -1 = export (HA / portal).
+	 * Fallback: watt > 0 = export (convenzione già usata da questo modulo).
+	 * @param {number|null} watts
+	 * @param {number|null} gridStatus
+	 * @param {number|null} loadStatus
+	 * @returns {"export"|"import"|"idle"}
+	 */
+	gridDirection (watts, gridStatus, loadStatus) {
+		let dir = "idle";
+		const n = Number(watts);
+		const signed = Number.isFinite(n) && Math.abs(n) >= 15 && n < 0;
+		if (signed) {
+			dir = "import";
+		} else {
+			const st = loadStatus ?? gridStatus;
+			if (st === 1) {
+				dir = "import";
+			} else if (st === -1) {
+				dir = "export";
+			} else if (Number.isFinite(n) && Math.abs(n) >= 15) {
+				dir = "export";
+			}
+		}
+		if (this.config.invertGrid && dir !== "idle") {
+			dir = dir === "export" ? "import" : "export";
+		}
+		return dir;
+	},
+
+	/**
+	 * SEMS betteryStatus: 1 = carica, -1 = scarica.
+	 * Fallback watt: negativo = carica, positivo = scarica.
+	 * @param {number|null} watts
+	 * @param {number|null} batteryStatus
+	 * @returns {"charge"|"discharge"|"idle"}
+	 */
+	batteryDirection (watts, batteryStatus) {
+		let dir = "idle";
+		const n = Number(watts);
+		const signed = Number.isFinite(n) && Math.abs(n) >= 15 && n < 0;
+		if (signed) {
+			dir = "charge";
+		} else if (batteryStatus === 1) {
+			dir = "charge";
+		} else if (batteryStatus === -1) {
+			dir = "discharge";
+		} else if (Number.isFinite(n) && Math.abs(n) >= 15) {
+			dir = "discharge";
+		}
+		if (this.config.invertBattery && dir !== "idle") {
+			dir = dir === "charge" ? "discharge" : "charge";
+		}
+		return dir;
+	},
+
+	/**
+	 * @param {number|null|undefined} w
+	 * @returns {string}
+	 */
+	flowDur (w) {
+		const n = Math.abs(Number(w) || 0);
+		const sec = Math.max(0.7, 2.4 - Math.min(n, 4000) / 2800);
+		return `${sec.toFixed(2)}s`;
+	},
+
+	/**
+	 * @param {string} name
+	 * @param {string} color
+	 * @param {number|null} [soc]
+	 * @returns {string}
+	 */
+	iconSvg (name, color, soc) {
+		const c = color || "#e2e8f0";
+		if (name === "sun") {
+			return `<svg class="mgw-svg" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.2" fill="${c}"/><g stroke="${c}" stroke-width="1.8" stroke-linecap="round" fill="none"><path d="M12 2.4v2.6M12 19v2.6M2.4 12h2.6M19 12h2.6M5.1 5.1l1.8 1.8M17.1 17.1l1.8 1.8M5.1 18.9l1.8-1.8M17.1 6.9l1.8-1.8"/></g></svg>`;
+		}
+		if (name === "grid") {
+			return `<svg class="mgw-svg" viewBox="0 0 24 24" aria-hidden="true"><path fill="none" stroke="${c}" stroke-width="1.7" stroke-linejoin="round" d="M4 20h16M8 20V9l4-5 4 5v11"/><path fill="none" stroke="${c}" stroke-width="1.5" d="M8 12h8M8 16h8"/><circle cx="12" cy="12" r="1.2" fill="${c}"/></svg>`;
+		}
+		if (name === "home") {
+			return `<svg class="mgw-svg" viewBox="0 0 24 24" aria-hidden="true"><path fill="none" stroke="${c}" stroke-width="1.8" stroke-linejoin="round" d="M3.6 11.2 12 4.2l8.4 7V20a1 1 0 0 1-1 1h-5.2v-6.2H9.8V21H4.6a1 1 0 0 1-1-1z"/></svg>`;
+		}
+		if (name === "inv") {
+			return `<svg class="mgw-svg" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="6" width="16" height="12" rx="2" fill="none" stroke="${c}" stroke-width="1.7"/><path d="M8 12h3l2-3 2 6 1-3h2" fill="none" stroke="${c}" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+		}
+		const pct = soc !== null && soc !== undefined ? Math.max(0, Math.min(100, Number(soc))) : 0;
+		const fillH = 10.2 * (pct / 100);
+		const fillY = 16.4 - fillH;
+		return `<svg class="mgw-svg" viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="5.2" width="10" height="13.6" rx="1.6" fill="none" stroke="${c}" stroke-width="1.7"/><rect x="10" y="3.2" width="4" height="2" rx="0.6" fill="${c}"/><rect x="8.3" y="${fillY}" width="7.4" height="${fillH}" rx="0.8" fill="${c}" opacity="0.85"/></svg>`;
+	},
+
+	/**
+	 * @param {SVGElement} svg
+	 * @param {string} d
+	 * @param {string} color
+	 * @param {boolean} active
+	 * @param {boolean} reverse
+	 * @param {string} dur
+	 */
+	appendFlowPath (svg, d, color, active, reverse, dur) {
+		const NS = "http://www.w3.org/2000/svg";
+		const track = document.createElementNS(NS, "path");
+		track.setAttribute("d", d);
+		track.setAttribute("class", "mgw-track");
+		svg.appendChild(track);
+
+		if (!active) {
+			return;
+		}
+
+		const glow = document.createElementNS(NS, "path");
+		glow.setAttribute("d", d);
+		glow.setAttribute("class", "mgw-flow mgw-flow-glow");
+		glow.setAttribute("stroke", color);
+		svg.appendChild(glow);
+
+		const flow = document.createElementNS(NS, "path");
+		flow.setAttribute("d", d);
+		flow.setAttribute("class", `mgw-flow${reverse ? " mgw-flow-rev" : ""}`);
+		flow.setAttribute("stroke", color);
+		flow.style.animationDuration = dur;
+		svg.appendChild(flow);
+
+		for (let i = 0; i < 3; i += 1) {
+			const dot = document.createElementNS(NS, "circle");
+			dot.setAttribute("r", i === 0 ? "3.1" : "2.2");
+			dot.setAttribute("fill", color);
+			dot.setAttribute("class", "mgw-dot");
+			const motion = document.createElementNS(NS, "animateMotion");
+			motion.setAttribute("dur", dur);
+			motion.setAttribute("repeatCount", "indefinite");
+			motion.setAttribute("begin", `${(i * 0.28).toFixed(2)}s`);
+			motion.setAttribute("path", reverse ? this.reversePath(d) : d);
+			dot.appendChild(motion);
+			svg.appendChild(dot);
+		}
+	},
+
+	/**
+	 * Inverte un path a due punti "M x y L x y".
+	 * @param {string} d
+	 * @returns {string}
+	 */
+	reversePath (d) {
+		const m = d.match(/M\s*([\d.]+)\s+([\d.]+)\s+L\s*([\d.]+)\s+([\d.]+)/i);
+		if (!m) {
+			return d;
+		}
+		return `M ${m[3]} ${m[4]} L ${m[1]} ${m[2]}`;
+	},
+
+	/**
+	 * @param {string} cls
+	 * @param {string} icon
+	 * @param {string} label
+	 * @param {string} value
+	 * @param {string} chip
+	 * @param {string} color
+	 * @param {boolean} hot
+	 * @returns {HTMLElement}
+	 */
+	mkCard (cls, icon, label, value, chip, color, hot) {
+		const el = document.createElement("div");
+		el.className = `mgw-card ${cls}${hot ? " mgw-hot" : ""}`;
+		el.style.setProperty("--mgw-c", color);
+		el.innerHTML = `<div class="mgw-ico">${icon}</div><div class="mgw-meta"><div class="mgw-lbl">${label}</div><div class="mgw-val">${value}</div>${chip ? `<div class="mgw-chip">${chip}</div>` : ""}</div>`;
+		return el;
+	},
+
+	/**
+	 * @param {Record<string, unknown>} v
+	 * @param {{pvW: number|null, loadW: number|null, gridDir: string, batDir: string, hasBat: boolean}} flow
+	 * @returns {string}
+	 */
+	flowStory (flow) {
+		const bits = [];
+		if (this.isFlowActive(flow.pvW)) {
+			bits.push(this.translate("PV"));
+		}
+		if (flow.hasBat && flow.batDir === "discharge") {
+			bits.push(this.translate("BATTERY"));
+		}
+		if (flow.gridDir === "import") {
+			bits.push(this.translate("GRID"));
+		}
+		if (bits.length && this.isFlowActive(flow.loadW)) {
+			return this.translate("STORY_TO_HOME").replace("{from}", bits.join(this.translate("STORY_AND")));
+		}
+		if (this.isFlowActive(flow.pvW) && flow.gridDir === "export" && flow.hasBat && flow.batDir === "charge") {
+			return this.translate("STORY_PV_SPLIT");
+		}
+		if (this.isFlowActive(flow.pvW) && flow.gridDir === "export") {
+			return this.translate("STORY_PV_EXPORT");
+		}
+		if (this.isFlowActive(flow.pvW) && flow.hasBat && flow.batDir === "charge") {
+			return this.translate("STORY_PV_CHARGE");
+		}
+		if (!this.isFlowActive(flow.pvW) && flow.hasBat && flow.batDir === "charge" && flow.gridDir === "import") {
+			return this.translate("STORY_GRID_CHARGE");
+		}
+		return this.translate("STORY_IDLE");
+	},
+
+	/**
 	 * @param {HTMLElement} wrap
 	 * @param {Record<string, unknown>} v
 	 */
 	appendEnergyFlow (wrap, v) {
-		const box = document.createElement("div");
-		box.className = "mgw-energy";
-
+		const C = this.config.colors || {};
 		const pf = v.powerflow;
 		const inv = (v.inverters && v.inverters[0]) || {};
 		const hasPf = Boolean(pf && v.station && v.station.hasPowerflow);
-		const showBat = v.station && v.station.showBattery !== false;
+		const showBat = Boolean(v.station && v.station.showBattery !== false);
 
 		const pvW = hasPf ? (pf.pv ?? null) : (inv.pvPower ?? inv.pac ?? v.pacTotal ?? null);
 		const gridW = hasPf ? (pf.grid ?? null) : null;
 		const loadW = hasPf ? (pf.load ?? null) : null;
 		const batW = hasPf && showBat ? (pf.battery ?? null) : null;
-		const soc = hasPf && pf.soc != null ? pf.soc : null;
+		const soc = hasPf && pf.soc != null ? Number(pf.soc) : null;
+		const gridDir = hasPf ? this.gridDirection(gridW, pf.gridStatus, pf.loadStatus) : "idle";
+		const batDir = hasPf && showBat ? this.batteryDirection(batW, pf.batteryStatus) : "idle";
 
-		const mkNode = (cls, ico, lblKey, watts, hot) => {
-			const el = document.createElement("div");
-			el.className = `mgw-node ${cls}${hot ? " mgw-hot" : ""}`;
-			const socHtml = soc !== null && showBat && cls === "mgw-battery" && soc >= 0 && soc <= 100
-				? `<div class="mgw-lbl">SoC ${soc}%</div>`
-				: "";
-			el.innerHTML = `<div class="mgw-ico">${ico}</div><div class="mgw-lbl">${this.translate(lblKey)}</div><div class="mgw-val">${this.formatW(watts)}</div>${socHtml}`;
-			return el;
-		};
+		const box = document.createElement("div");
+		box.className = `mgw-energy${showBat && hasPf ? "" : " mgw-nobat"}`;
 
-		const mkVConn = (active, anim) => {
-			const wrapC = document.createElement("div");
-			wrapC.className = "mgw-conn mgw-conn-v";
-			const line = document.createElement("div");
-			line.className = `mgw-line mgw-line-v${active ? " mgw-on" : ""}${anim ? ` ${anim}` : ""}`;
-			wrapC.appendChild(line);
-			const ar = document.createElement("span");
-			ar.className = "mgw-arrow";
-			ar.textContent = active ? "▼" : "·";
-			wrapC.appendChild(ar);
-			return wrapC;
-		};
+		const story = document.createElement("div");
+		story.className = "mgw-story";
+		story.textContent = hasPf
+			? this.flowStory({ pvW, loadW, gridDir, batDir, hasBat: showBat })
+			: this.translate("NO_POWERFLOW");
+		box.appendChild(story);
 
-		const mkHConn = (active, animClasses, arrowChar) => {
-			const wrapC = document.createElement("div");
-			wrapC.className = "mgw-conn mgw-conn-h";
-			const line = document.createElement("div");
-			line.className = `mgw-line mgw-line-h${active ? " mgw-on" : ""}`;
-			if (active && animClasses) {
-				animClasses.split(/\s+/).forEach((c) => {
-					if (c) {
-						line.classList.add(c);
-					}
-				});
-			}
-			wrapC.appendChild(line);
-			const ar = document.createElement("span");
-			ar.className = "mgw-arrow mgw-arrow-h";
-			ar.textContent = active ? arrowChar : "·";
-			wrapC.appendChild(ar);
-			return wrapC;
-		};
+		const stage = document.createElement("div");
+		stage.className = "mgw-stage";
 
-		const rowPv = document.createElement("div");
-		rowPv.className = "mgw-row mgw-row-center";
-		rowPv.appendChild(mkNode("mgw-solar", "☀", "PV", pvW, this.isFlowActive(pvW)));
-		box.appendChild(rowPv);
+		const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+		svg.setAttribute("class", "mgw-lines");
+		svg.setAttribute("viewBox", showBat && hasPf ? "0 0 580 360" : "0 0 580 248");
+		svg.setAttribute("preserveAspectRatio", "xMidYMid meet");
 
-		box.appendChild(mkVConn(this.isFlowActive(pvW), this.isFlowActive(pvW) ? "mgw-anim-v" : ""));
-
-		const rowInv = document.createElement("div");
-		rowInv.className = "mgw-row mgw-row-mid";
 		if (hasPf) {
-			rowInv.appendChild(mkNode("mgw-grid", "⌁", "GRID", gridW, this.isFlowActive(gridW)));
-
-			let gridAnim = "";
-			if (this.isFlowActive(gridW)) {
-				gridAnim = gridW > 0 ? "mgw-grid-exp" : "mgw-grid-imp";
+			this.appendFlowPath(svg, "M290 104 L290 128", C.pv || "#F5C518", this.isFlowActive(pvW), false, this.flowDur(pvW));
+			const gridOn = gridDir !== "idle" && this.isFlowActive(gridW);
+			const gridColor = gridDir === "import" ? (C.gridImport || "#f87171") : (C.gridExport || "#38bdf8");
+			this.appendFlowPath(svg, "M100 186 L236 186", gridColor, gridOn, gridDir === "export", this.flowDur(gridW));
+			this.appendFlowPath(svg, "M344 186 L480 186", C.load || "#7dd3fc", this.isFlowActive(loadW), false, this.flowDur(loadW));
+			if (showBat) {
+				const batOn = batDir !== "idle" && this.isFlowActive(batW);
+				const batColor = batDir === "charge" ? (C.batteryCharge || "#34d399") : (C.batteryDischarge || "#a78bfa");
+				this.appendFlowPath(svg, "M290 246 L290 268", batColor, batOn, batDir === "discharge", this.flowDur(batW));
 			}
-			const gridArrow = this.isFlowActive(gridW) ? (gridW > 0 ? "◀" : "▶") : "·";
-			rowInv.appendChild(mkHConn(this.isFlowActive(gridW), gridAnim, gridArrow));
-
-			rowInv.appendChild(mkNode("mgw-inv", "⎍", "INVERTER", inv.pac ?? v.pacTotal, this.isFlowActive(inv.pac ?? v.pacTotal)));
-
-			const loadAnim = this.isFlowActive(loadW) ? "mgw-anim-h-l" : "";
-			rowInv.appendChild(mkHConn(this.isFlowActive(loadW), loadAnim, this.isFlowActive(loadW) ? "▶" : "·"));
-
-			rowInv.appendChild(mkNode("mgw-load", "⌂", "HOME", loadW, this.isFlowActive(loadW)));
 		} else {
-			rowInv.appendChild(mkNode("mgw-inv", "⎍", "INVERTER", inv.pac ?? v.pacTotal, this.isFlowActive(inv.pac ?? v.pacTotal)));
+			this.appendFlowPath(svg, "M290 104 L290 128", C.pv || "#F5C518", this.isFlowActive(pvW), false, this.flowDur(pvW));
 		}
-		box.appendChild(rowInv);
+		stage.appendChild(svg);
+
+		const pvHot = this.isFlowActive(pvW);
+		stage.appendChild(this.mkCard(
+			"mgw-solar",
+			this.iconSvg("sun", C.pv || "#F5C518"),
+			this.translate("PV"),
+			this.formatW(pvW),
+			pvHot ? this.translate("PV_ON") : this.translate("PV_OFF"),
+			C.pv || "#F5C518",
+			pvHot
+		));
+
+		if (hasPf) {
+			const gridHot = gridDir !== "idle";
+			const gridColor = gridDir === "import" ? (C.gridImport || "#f87171") : (C.gridExport || "#38bdf8");
+			const gridChip = gridDir === "import"
+				? this.translate("GRID_IMPORT")
+				: gridDir === "export"
+					? this.translate("GRID_EXPORT")
+					: this.translate("GRID_IDLE");
+			stage.appendChild(this.mkCard(
+				"mgw-grid",
+				this.iconSvg("grid", gridColor),
+				this.translate("GRID"),
+				this.formatW(gridW),
+				gridChip,
+				gridColor,
+				gridHot
+			));
+		}
+
+		const invW = inv.pac ?? v.pacTotal;
+		stage.appendChild(this.mkCard(
+			"mgw-inv",
+			this.iconSvg("inv", C.inverter || "#e2e8f0"),
+			this.translate("INVERTER"),
+			this.formatW(invW),
+			inv.statusLabel || "",
+			C.inverter || "#e2e8f0",
+			this.isFlowActive(invW)
+		));
+
+		if (hasPf) {
+			stage.appendChild(this.mkCard(
+				"mgw-load",
+				this.iconSvg("home", C.load || "#7dd3fc"),
+				this.translate("HOME"),
+				this.formatW(loadW),
+				this.isFlowActive(loadW) ? this.translate("HOME_ON") : this.translate("HOME_IDLE"),
+				C.load || "#7dd3fc",
+				this.isFlowActive(loadW)
+			));
+		}
 
 		if (hasPf && showBat) {
-			const wrapBt = document.createElement("div");
-			wrapBt.className = "mgw-conn mgw-conn-v mgw-conn-v-up";
-			const arU = document.createElement("span");
-			arU.className = "mgw-arrow";
-			arU.textContent = this.isFlowActive(batW) ? "▲" : "·";
-			wrapBt.appendChild(arU);
-			const lineB = document.createElement("div");
-			lineB.className = `mgw-line mgw-line-v${this.isFlowActive(batW) ? " mgw-on mgw-anim-v" : ""}`;
-			wrapBt.appendChild(lineB);
-			box.appendChild(wrapBt);
-
-			const rowBt = document.createElement("div");
-			rowBt.className = "mgw-row mgw-row-center";
-			rowBt.appendChild(mkNode("mgw-battery", "▣", "BATTERY", batW, this.isFlowActive(batW)));
-			box.appendChild(rowBt);
-		} else if (!hasPf) {
-			const hint = document.createElement("div");
-			hint.className = "mgw-hint dimmed xsmall";
-			hint.textContent = this.translate("NO_POWERFLOW");
-			box.appendChild(hint);
+			const batHot = batDir !== "idle";
+			const batColor = batDir === "charge" ? (C.batteryCharge || "#34d399") : (C.batteryDischarge || "#a78bfa");
+			const batChip = batDir === "charge"
+				? this.translate("BAT_CHARGE")
+				: batDir === "discharge"
+					? this.translate("BAT_DISCHARGE")
+					: this.translate("BAT_IDLE");
+			const card = this.mkCard(
+				"mgw-battery",
+				this.iconSvg("bat", batColor, soc),
+				this.translate("BATTERY"),
+				this.formatW(batW),
+				soc !== null && soc >= 0 && soc <= 100
+					? `${batChip} ${Math.round(soc)}%`
+					: batChip,
+				batColor,
+				batHot
+			);
+			if (soc !== null && soc >= 0 && soc <= 100) {
+				const bar = document.createElement("div");
+				bar.className = "mgw-soc";
+				bar.innerHTML = `<span style="width:${Math.round(soc)}%"></span>`;
+				card.appendChild(bar);
+			}
+			stage.appendChild(card);
 		}
 
+		box.appendChild(stage);
 		wrap.appendChild(box);
 	},
 
@@ -332,15 +563,15 @@ Module.register("MMM-GoodWeSEMS", {
 	 */
 	getDom () {
 		const wrap = document.createElement("div");
-		wrap.className = "mmm-goodwe xsmall";
+		wrap.className = "mmm-goodwe";
 
 		if (this.errorMessage && !this.view) {
-			wrap.innerHTML = `<div class="dimmed">${this.translate("ERROR")}: ${this.errorMessage}</div>`;
+			wrap.innerHTML = `<div class="mgw-empty">${this.translate("ERROR")}: ${this.errorMessage}</div>`;
 			return wrap;
 		}
 
 		if (!this.view) {
-			wrap.innerHTML = `<div class="dimmed">${this.translate("LOADING")}</div>`;
+			wrap.innerHTML = `<div class="mgw-empty">${this.translate("LOADING")}</div>`;
 			return wrap;
 		}
 
@@ -350,14 +581,13 @@ Module.register("MMM-GoodWeSEMS", {
 		header.className = "mmm-goodwe-header";
 		const title = station.name || this.translate("TITLE");
 		const clock = this.formatUpdatedLocalTime(v.updatedAt);
-		const sub = clock ? `${this.translate("UPDATED")}: ${clock}` : "";
-		header.innerHTML = `<div class="mmm-goodwe-title bright">${title}</div><div class="mmm-goodwe-sub">${sub}</div>`;
+		const sub = clock ? `${this.translate("UPDATED")} ${clock}` : "";
+		header.innerHTML = `<div class="mmm-goodwe-title">${title}</div><div class="mmm-goodwe-sub">${sub}</div>`;
 		wrap.appendChild(header);
 
 		if (this.errorMessage) {
 			const err = document.createElement("div");
-			err.className = "dimmed";
-			err.style.marginBottom = "0.25em";
+			err.className = "mgw-empty";
 			err.textContent = `${this.translate("ERROR")}: ${this.errorMessage}`;
 			wrap.appendChild(err);
 		}
@@ -367,19 +597,21 @@ Module.register("MMM-GoodWeSEMS", {
 			kpi.className = "mmm-goodwe-kpi";
 			const k = v.kpi || {};
 			const inv0 = (v.inverters && v.inverters[0]) || {};
-			const parts = [
-				`<span>${this.translate("PAC")}: <span class="bright">${this.formatW(v.pacTotal)}</span></span>`
+			const tiles = [
+				[this.translate("PAC"), this.formatW(v.pacTotal)]
 			];
 			if (inv0.eday != null) {
-				parts.push(`<span>${this.translate("ENERGY_TODAY")}: <span class="bright">${inv0.eday} kWh</span></span>`);
+				tiles.push([this.translate("ENERGY_TODAY"), `${inv0.eday} kWh`]);
 			}
 			if (k.monthGeneration != null) {
-				parts.push(`<span>${this.translate("ENERGY_MONTH")}: <span class="bright">${k.monthGeneration} kWh</span></span>`);
+				tiles.push([this.translate("ENERGY_MONTH"), `${k.monthGeneration} kWh`]);
 			}
 			if (k.totalEnergy != null) {
-				parts.push(`<span>${this.translate("ENERGY_TOTAL")}: <span class="bright">${k.totalEnergy} kWh</span></span>`);
+				tiles.push([this.translate("ENERGY_TOTAL"), `${k.totalEnergy} kWh`]);
 			}
-			kpi.innerHTML = parts.join(" ");
+			kpi.innerHTML = tiles
+				.map(([lbl, val]) => `<div class="mgw-kpi"><span class="mgw-kpi-lbl">${lbl}</span><span class="mgw-kpi-val">${val}</span></div>`)
+				.join("");
 			wrap.appendChild(kpi);
 		}
 
