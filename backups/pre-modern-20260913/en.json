@@ -1,0 +1,16 @@
+{
+	"TITLE": "GoodWe",
+	"UPDATED": "Updated",
+	"LOADING": "Loading SEMS…",
+	"ERROR": "SEMS error",
+	"PV": "Solar",
+	"GRID": "Grid",
+	"HOME": "Load",
+	"BATTERY": "Battery",
+	"PAC": "Output",
+	"ENERGY_TODAY": "Today",
+	"ENERGY_MONTH": "Month",
+	"ENERGY_TOTAL": "Total",
+	"INVERTER": "Inverter",
+	"NO_POWERFLOW": "Power flow not available for this plant."
+}

@@ -1,0 +1,261 @@
+.mmm-goodwe {
+	width: 100%;
+	max-width: 260px;
+	font-size: 0.78rem;
+}
+
+.mmm-goodwe-header {
+	margin-bottom: 0.2em;
+}
+
+.mmm-goodwe-title {
+	font-size: 0.95em;
+	font-weight: 600;
+	line-height: 1.2;
+}
+
+.mmm-goodwe-sub {
+	font-size: 0.62em;
+	opacity: 0.72;
+	line-height: 1.25;
+}
+
+.mmm-goodwe-kpi {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.35rem 0.55rem;
+	font-size: 0.68em;
+	margin: 0.25rem 0 0.15rem;
+}
+
+.mmm-goodwe-kpi span {
+	opacity: 0.88;
+}
+
+/* Diagramma compatto: flex + frecce centrate sulle linee */
+.mgw-energy {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	width: 100%;
+	max-width: 248px;
+	margin: 0.15rem auto 0;
+	--mgw-line: rgba(255, 255, 255, 0.2);
+	--mgw-active: #22c55e;
+	--mgw-import: #f87171;
+	--mgw-export: #38bdf8;
+}
+
+.mgw-row {
+	display: flex;
+	width: 100%;
+	align-items: center;
+}
+
+.mgw-row-center {
+	justify-content: center;
+}
+
+.mgw-row-mid {
+	justify-content: space-between;
+	gap: 2px;
+	flex-wrap: nowrap;
+	align-items: stretch;
+}
+
+.mgw-node {
+	text-align: center;
+	padding: 0.18rem 0.28rem;
+	border-radius: 6px;
+	background: rgba(255, 255, 255, 0.06);
+	border: 1px solid rgba(255, 255, 255, 0.1);
+	min-width: 3.1rem;
+	max-width: 4.6rem;
+	flex: 0 0 auto;
+}
+
+.mgw-node .mgw-ico {
+	font-size: 0.95em;
+	line-height: 1;
+	margin-bottom: 0.05em;
+	opacity: 0.92;
+}
+
+.mgw-node .mgw-lbl {
+	font-size: 0.52em;
+	text-transform: uppercase;
+	letter-spacing: 0.04em;
+	opacity: 0.72;
+}
+
+.mgw-node .mgw-val {
+	font-size: 0.68em;
+	font-weight: 600;
+	line-height: 1.15;
+}
+
+.mgw-node.mgw-hot {
+	border-color: rgba(34, 197, 94, 0.4);
+	background: rgba(34, 197, 94, 0.1);
+}
+
+.mgw-node.mgw-inv {
+	min-width: 3.4rem;
+	max-width: 5rem;
+}
+
+/* Connettore verticale: linea + freccia centrata */
+.mgw-conn-v {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: flex-start;
+	width: 14px;
+	min-height: 22px;
+}
+
+.mgw-conn-v .mgw-line-v {
+	width: 3px;
+	flex: 1 1 14px;
+	min-height: 14px;
+	border-radius: 2px;
+	background: var(--mgw-line);
+}
+
+.mgw-conn-v .mgw-arrow {
+	font-size: 0.45rem;
+	line-height: 1;
+	margin: 1px 0;
+	color: #cbd5e1;
+}
+
+.mgw-conn-v-up {
+	flex-direction: column;
+	justify-content: flex-end;
+	min-height: 22px;
+}
+
+.mgw-conn-v-up .mgw-arrow {
+	order: 0;
+}
+
+.mgw-conn-v-up .mgw-line-v {
+	order: 1;
+}
+
+/* Connettore orizzontale: linea a tutta larghezza, freccie sopra al centro */
+.mgw-conn-h {
+	position: relative;
+	flex: 1 1 14px;
+	min-width: 14px;
+	max-width: 56px;
+	height: 14px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	align-self: center;
+}
+
+.mgw-conn-h .mgw-line-h {
+	position: absolute;
+	left: 0;
+	right: 0;
+	top: 50%;
+	transform: translateY(-50%);
+	height: 3px;
+	border-radius: 2px;
+	background: var(--mgw-line);
+}
+
+.mgw-conn-h .mgw-arrow-h {
+	position: relative;
+	z-index: 1;
+	font-size: 0.48rem;
+	line-height: 1;
+	color: #e2e8f0;
+}
+
+.mgw-line.mgw-on.mgw-anim-v {
+	background: linear-gradient(
+		to bottom,
+		transparent 0%,
+		var(--mgw-active) 45%,
+		transparent 90%
+	);
+	background-size: 100% 200%;
+	animation: mgw-flow-v 2s linear infinite;
+}
+
+.mgw-line.mgw-on.mgw-anim-h-r {
+	background: linear-gradient(
+		to right,
+		transparent 0%,
+		var(--mgw-active) 50%,
+		transparent 100%
+	);
+	background-size: 200% 100%;
+	animation: mgw-flow-h 2s linear infinite;
+}
+
+.mgw-line.mgw-on.mgw-anim-h-l {
+	background: linear-gradient(
+		to left,
+		transparent 0%,
+		var(--mgw-active) 50%,
+		transparent 100%
+	);
+	background-size: 200% 100%;
+	animation: mgw-flow-h 2s linear infinite reverse;
+}
+
+.mgw-line.mgw-on.mgw-grid-exp {
+	background: linear-gradient(
+		to left,
+		transparent 0%,
+		var(--mgw-export) 50%,
+		transparent 100%
+	);
+	background-size: 200% 100%;
+	animation: mgw-flow-h 2s linear infinite;
+}
+
+.mgw-line.mgw-on.mgw-grid-imp {
+	background: linear-gradient(
+		to right,
+		transparent 0%,
+		var(--mgw-import) 50%,
+		transparent 100%
+	);
+	background-size: 200% 100%;
+	animation: mgw-flow-h 2s linear infinite;
+}
+
+@keyframes mgw-flow-v {
+	0% {
+		background-position: 0 0;
+	}
+	100% {
+		background-position: 0 100%;
+	}
+}
+
+@keyframes mgw-flow-h {
+	0% {
+		background-position: 0 0;
+	}
+	100% {
+		background-position: 100% 0;
+	}
+}
+
+.mgw-hint {
+	text-align: center;
+	margin-top: 0.2rem;
+	width: 100%;
+}
+
+.mmm-goodwe-inverters {
+	font-size: 0.62em;
+	margin-top: 0.2rem;
+	opacity: 0.82;
+}

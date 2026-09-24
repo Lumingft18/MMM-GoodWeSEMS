@@ -3,9 +3,9 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://github.com/Lumingft18/MMM-GoodWeSEMS/blob/main/LICENSE)
 [![MagicMirror²](https://img.shields.io/badge/MagicMirror²-module-blue)](https://magicmirror.builders/)
 
-**English:** Third-party module for [MagicMirror²](https://github.com/MagicMirrorOrg/MagicMirror): read-only monitoring of **GoodWe** photovoltaic (or hybrid) plants through the official **SEMS** cloud portal. No inverter commands, no write operations.
+**English:** Third-party module for [MagicMirror²](https://github.com/MagicMirrorOrg/MagicMirror): read-only monitoring of **GoodWe** photovoltaic (or hybrid) plants through the **SEMS / SEMS+** cloud portal. No inverter commands, no write operations.
 
-**Italiano:** Modulo per MagicMirror² che mostra dati impianto **GoodWe** dal portale **SEMS** (account cloud). Solo lettura: nessun comando verso inverter o impianto.
+**Italiano:** Modulo per MagicMirror² che mostra dati impianto **GoodWe** dal portale **SEMS / SEMS+** (account cloud). Solo lettura: nessun comando verso inverter o impianto.
 
 Repository: **https://github.com/Lumingft18/MMM-GoodWeSEMS**
 
@@ -27,6 +27,8 @@ Repository: **https://github.com/Lumingft18/MMM-GoodWeSEMS**
 - [MagicMirror²](https://github.com/MagicMirrorOrg/MagicMirror) installato  
 - Account **GoodWe SEMS** (stesso login dell’app / portale)  
 - Node.js **≥ 18** (allineato al core MagicMirror recente)
+
+Il modulo prova prima l'accesso **SEMS+** e usa il gateway attuale per leggere dispositivi, telemetria e produzione. Se l'account usa ancora il backend classico, prova il login e l'endpoint legacy. Le API cloud per account domestici non sono documentate da GoodWe e possono cambiare senza preavviso.
 
 ---
 

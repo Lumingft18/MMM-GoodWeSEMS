@@ -9,7 +9,7 @@ const { SemsApi } = require(path.join(__dirname, "lib", "semsApi.js"));
 const { normalizeSemsData } = require(path.join(__dirname, "lib", "normalize.js"));
 
 module.exports = NodeHelper.create({
-	/** @type {Record<string, { timer: ReturnType<typeof setTimeout> | null, payload: object }>} */
+	/** @type {Record<string, { timer: ReturnType<typeof setTimeout> | null, payload: object, api: InstanceType<typeof SemsApi>, errorCount: number, hasReceivedData: boolean }>} */
 	instances: {},
 
 	start () {
@@ -40,7 +40,7 @@ module.exports = NodeHelper.create({
 	/**
 	 * @param {object} payload
 	 */
-	scheduleNext (payload) {
+	scheduleNext (payload, overrideDelay = null) {
 		const id = payload.identifier;
 		const inst = this.instances[id];
 		if (!inst) {
@@ -49,17 +49,34 @@ module.exports = NodeHelper.create({
 		if (inst.timer) {
 			clearTimeout(inst.timer);
 		}
-		const delay = Math.max(10_000, Number(payload.updateInterval) || 60_000);
+		const baseDelay = Math.max(10_000, Number(payload.updateInterval) || 60_000);
+		const delay = overrideDelay || baseDelay;
 		inst.timer = setTimeout(() => {
 			this.pollOne(payload).catch((err) => {
-				Log.error(`${this.name} poll error:`, err);
-				this.sendSocketNotification("GOODWE_ERROR", {
-					identifier: id,
-					message: err.message || String(err)
-				});
-				this.scheduleNext(payload);
+				this.handlePollError(payload, err, "poll");
 			});
 		}, delay);
+	},
+
+	/**
+	 * @param {object} payload
+	 * @param {Error} err
+	 * @param {string} phase
+	 */
+	handlePollError (payload, err, phase) {
+		const id = payload.identifier;
+		const inst = this.instances[id];
+		if (!inst) return;
+		inst.errorCount += 1;
+		const baseDelay = Math.max(10_000, Number(payload.updateInterval) || 60_000);
+		const maxDelay = Math.max(5 * 60_000, baseDelay);
+		const retryDelay = Math.min(maxDelay, baseDelay * (2 ** Math.min(inst.errorCount, 3)));
+		Log.error(`${this.name} ${phase}:`, err);
+		this.sendSocketNotification("GOODWE_ERROR", {
+			identifier: id,
+			message: err.message || String(err)
+		});
+		this.scheduleNext(payload, retryDelay);
 	},
 
 	/**
@@ -71,9 +88,7 @@ module.exports = NodeHelper.create({
 		if (!inst) {
 			return;
 		}
-
-		const timeout = Math.max(5000, Number(payload.requestTimeout) || 30_000);
-		const api = new SemsApi(payload.username, payload.password, timeout);
+		const api = inst.api;
 
 		let stationId = payload.powerStationId;
 		if (!stationId) {
@@ -93,6 +108,12 @@ module.exports = NodeHelper.create({
 		}
 
 		const view = normalizeSemsData(raw);
+		if (!inst.hasReceivedData) {
+			const flowState = view.station.hasPowerflow ? "with power flow" : "without power flow";
+			Log.info(`${this.name}: received ${view.inverters.length} inverter(s) ${flowState} via ${api.mode}`);
+			inst.hasReceivedData = true;
+		}
+		inst.errorCount = 0;
 
 		this.sendSocketNotification("GOODWE_DATA", {
 			identifier: id,
@@ -110,20 +131,26 @@ module.exports = NodeHelper.create({
 				Log.error(`${this.name}: missing identifier in FETCH_GOODWE`);
 				return;
 			}
-			this.clearInstance(id);
-			this.instances[id] = {
-				timer: null,
-				payload
-			};
+				const previous = this.instances[id];
+				const api = previous?.api || new SemsApi(
+					payload.username,
+					payload.password,
+					Math.max(5000, Number(payload.requestTimeout) || 30_000)
+				);
+				const errorCount = previous?.errorCount || 0;
+				const hasReceivedData = previous?.hasReceivedData || false;
+				this.clearInstance(id);
+				this.instances[id] = {
+					timer: null,
+					payload,
+					api,
+					errorCount,
+					hasReceivedData
+				};
 
-			this.pollOne(payload).catch((err) => {
-				Log.error(`${this.name} initial fetch:`, err);
-				this.sendSocketNotification("GOODWE_ERROR", {
-					identifier: id,
-					message: err.message || String(err)
+				this.pollOne(payload).catch((err) => {
+					this.handlePollError(payload, err, "initial fetch");
 				});
-				this.scheduleNext(payload);
-			});
 		} else if (notification === "STOP_GOODWE") {
 			const sid = payload?.identifier;
 			if (sid) {
